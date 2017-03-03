@@ -214,8 +214,8 @@
 
 #ifdef SAMKEYCHAIN_ACCESS_GROUP_AVAILABLE
 #if !TARGET_IPHONE_SIMULATOR
-	if (self.accessGroup) {
-		[dictionary setObject:self.accessGroup forKey:(__bridge id)kSecAttrAccessGroup];
+	if ([[self class] getFullAccessGroup:self.accessGroup]) {
+		[dictionary setObject:[[self class] getFullAccessGroup:self.accessGroup] forKey:(__bridge id)kSecAttrAccessGroup];
 	}
 #endif
 #endif
@@ -311,6 +311,51 @@
 		userInfo = @{ NSLocalizedDescriptionKey : message };
 	}
 	return [NSError errorWithDomain:kSAMKeychainErrorDomain code:code userInfo:userInfo];
+}
+
++ (NSString *)getFullAccessGroup:(NSString *)group
+{
+	NSString *accessGroup = nil;
+	NSString *bundleSeedIdentifier = [self getBundleSeedIdentifier];
+	if (bundleSeedIdentifier != nil && [group rangeOfString:bundleSeedIdentifier].location == NSNotFound) {
+		accessGroup = [NSString stringWithFormat:@"%@.%@", bundleSeedIdentifier, group];
+	}
+	return accessGroup;
+}
+
++ (NSString *)getBundleSeedIdentifier
+{
+	static __strong NSString *bundleSeedIdentifier = nil;
+	
+	if (bundleSeedIdentifier == nil) {
+		@synchronized(self) {
+			if (bundleSeedIdentifier == nil) {
+				NSString *_bundleSeedIdentifier = nil;
+				NSDictionary *query = @{
+										(__bridge id)kSecClass: (__bridge NSString *)kSecClassGenericPassword,
+										(__bridge id)kSecAttrAccount: @"bundleSeedID",
+										(__bridge id)kSecAttrService: @"",
+										(__bridge id)kSecReturnAttributes: (__bridge id)kCFBooleanTrue
+										};
+				CFDictionaryRef result = nil;
+				OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, (CFTypeRef *)&result);
+				if (status == errSecItemNotFound) {
+					status = SecItemAdd((__bridge CFDictionaryRef)query, (CFTypeRef *)&result);
+				}
+				if (status == errSecSuccess) {
+					NSString *accessGroup = [(__bridge NSDictionary *)result objectForKey:(__bridge NSString *)kSecAttrAccessGroup];
+					NSArray *components = [accessGroup componentsSeparatedByString:@"."];
+					_bundleSeedIdentifier = [[components objectEnumerator] nextObject];
+					CFRelease(result);
+				}
+				if (_bundleSeedIdentifier != nil) {
+					bundleSeedIdentifier = [_bundleSeedIdentifier copy];
+				}
+			}
+		}
+	}
+	
+	return bundleSeedIdentifier;
 }
 
 @end
